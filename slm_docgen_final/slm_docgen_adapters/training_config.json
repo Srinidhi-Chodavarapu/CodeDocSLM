@@ -1,0 +1,23 @@
+{
+  "model_id": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+  "lora_r": 16,
+  "lora_alpha": 32,
+  "lora_dropout": 0.0,
+  "target_modules": [
+    "q_proj",
+    "k_proj",
+    "v_proj",
+    "o_proj",
+    "gate_proj",
+    "up_proj",
+    "down_proj"
+  ],
+  "max_seq_length": 2048,
+  "num_epochs": 1,
+  "learning_rate": 0.0002,
+  "batch_size": 16,
+  "train_samples": 85098,
+  "val_samples": 4478,
+  "final_train_loss": 0.510566374170397,
+  "trained_at": "2026-04-04T17:37:28.463597"
+}

@@ -1,0 +1,11 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+*.bak
+.pytest_cache/
+.ipynb_checkpoints/
+node_modules/
+*.safetensors
+new/

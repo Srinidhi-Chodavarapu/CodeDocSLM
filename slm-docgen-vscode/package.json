@@ -1,0 +1,170 @@
+{
+  "name": "slm-docgen-vscode",
+  "displayName": "SLM DocGen",
+  "description": "AI-powered code documentation generator using fine-tuned language models",
+  "version": "0.1.0",
+  "publisher": "your-publisher-name",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Formatters",
+    "Other"
+  ],
+  "keywords": [
+    "documentation",
+    "docstring",
+    "ai",
+    "python",
+    "java",
+    "javascript"
+  ],
+  "activationEvents": [
+    "onLanguage:python",
+    "onLanguage:java",
+    "onLanguage:javascript",
+    "onLanguage:typescript",
+    "onCommand:slm-docgen.documentFunction",
+    "onCommand:slm-docgen.documentFile",
+    "onCommand:slm-docgen.documentWorkspace"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "slm-docgen.documentFunction",
+        "title": "Document Function/Class at Cursor",
+        "category": "SLM DocGen"
+      },
+      {
+        "command": "slm-docgen.documentFile",
+        "title": "Document Current File",
+        "category": "SLM DocGen"
+      },
+      {
+        "command": "slm-docgen.documentWorkspace",
+        "title": "Document Workspace",
+        "category": "SLM DocGen"
+      },
+      {
+        "command": "slm-docgen.documentDirectory",
+        "title": "Document This Directory",
+        "category": "SLM DocGen"
+      },
+      {
+        "command": "slm-docgen.startServer",
+        "title": "Start Documentation Server",
+        "category": "SLM DocGen"
+      },
+      {
+        "command": "slm-docgen.stopServer",
+        "title": "Stop Documentation Server",
+        "category": "SLM DocGen"
+      },
+      {
+        "command": "slm-docgen.showLogs",
+        "title": "Show Server Logs",
+        "category": "SLM DocGen"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "slm-docgen.documentFile",
+          "when": "resourceLangId == python || resourceLangId == java || resourceLangId == javascript || resourceLangId == typescript",
+          "group": "1_modification@1"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "slm-docgen.documentDirectory",
+          "when": "explorerResourceIsFolder",
+          "group": "1_modification@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "slm-docgen.documentFunction",
+          "when": "editorLangId == python || editorLangId == java || editorLangId == javascript || editorLangId == typescript"
+        },
+        {
+          "command": "slm-docgen.documentFile",
+          "when": "editorLangId == python || editorLangId == java || editorLangId == javascript || editorLangId == typescript"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "SLM DocGen",
+      "properties": {
+        "slm-docgen.serverPort": {
+          "type": "number",
+          "default": 8000,
+          "description": "Port for the documentation server"
+        },
+        "slm-docgen.autoStartServer": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start the documentation server on activation"
+        },
+        "slm-docgen.pythonPath": {
+          "type": "string",
+          "default": "python3",
+          "description": "Path to Python executable"
+        },
+        "slm-docgen.adapterPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to model adapters (leave empty for auto-detect)"
+        },
+        "slm-docgen.slmDocgenPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to slm_docgen directory containing cli.py (leave empty for auto-detect)"
+        },
+        "slm-docgen.enable4bit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable 4-bit quantization for faster inference"
+        },
+        "slm-docgen.enableCodeLens": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show 'Document this' quick actions above functions"
+        },
+        "slm-docgen.maxFiles": {
+          "type": "number",
+          "default": 50,
+          "description": "Maximum number of files to process in workspace documentation"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "lint": "eslint src --ext ts",
+    "build:vsix": "npm run package && vsce package"
+  },
+  "devDependencies": {
+    "@types/archiver": "^6.0.2",
+    "@types/glob": "^8.1.0",
+    "@types/node": "20.x",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "@vscode/vsce": "^3.9.1",
+    "eslint": "^8.56.0",
+    "glob": "^10.3.10",
+    "ts-loader": "^9.5.1",
+    "typescript": "^5.3.3",
+    "webpack": "^5.89.0",
+    "webpack-cli": "^5.1.4"
+  },
+  "dependencies": {
+    "archiver": "^6.0.1",
+    "axios": "^1.6.5",
+    "form-data": "^4.0.0"
+  }
+}

@@ -1,0 +1,806 @@
+COMPREHENSIVE PROJECT CONTEXT FOR IEEE PAPER DOCUMENTATION
+===============================================================
+
+PROJECT TITLE
+-------------
+Automated Multi-Language Code Documentation Generation Using Fine-Tuned Small Language Models with LoRA Adapters
+
+
+1. PROJECT OVERVIEW
+===================
+
+1.1 Purpose
+-----------
+This project implements an AI-powered code documentation generator that automatically creates high-quality docstrings for Python, Java, and JavaScript/TypeScript code using a fine-tuned Small Language Model (SLM). The system runs entirely locally, ensuring privacy and eliminating cloud dependencies.
+
+1.2 Core Problem
+----------------
+- Manual code documentation is time-consuming and often inconsistent
+- Developers frequently skip documentation, leading to poor code maintainability
+- Cloud-based AI solutions raise privacy concerns for proprietary codebases
+- Large language models are computationally expensive for routine documentation tasks
+
+1.3 Solution Approach
+---------------------
+Fine-tune a small, efficient language model (Qwen2.5-Coder-1.5B-Instruct) using QLoRA (Quantized Low-Rank Adaptation) to specialize in generating language-specific docstrings while maintaining local deployment and fast inference.
+
+1.4 Key Innovation
+------------------
+- Small model, specialized task: 1.5B parameter model vs 70B+ general-purpose models
+- Multi-language support: Single model handles Python (Google-style), Java (Javadoc), and JavaScript (JSDoc)
+- Production-ready: Complete pipeline from parsing to injection with safety mechanisms
+- Resource-efficient: 4-bit quantization enables inference on consumer GPUs
+
+
+2. TECHNICAL ARCHITECTURE
+==========================
+
+2.1 System Components
+---------------------
+
+A. Parser Module (slm_docgen/app/parser.py)
+--------------------------------------------
+Purpose: Extract documentable code units from source files
+
+Technologies:
+- Python: AST (Abstract Syntax Tree) parsing
+- Java/JavaScript: Regex-based extraction
+
+Output Data Structure:
+@dataclass
+class CodeUnit:
+    name: str              # Function/class/method name
+    kind: str              # 'function', 'class', 'method'
+    code: str              # Source code snippet
+    language: str          # 'python', 'java', 'javascript'
+    file_path: str         # File location
+    start_line: int        # Start line number
+    end_line: int          # End line number
+    docstring: Optional[str]      # Existing docstring (if any)
+    generated_doc: Optional[str]  # AI-generated documentation
+    latency: Optional[float]      # Generation time in seconds
+
+Key Features:
+- Skip patterns: __pycache__, .git, node_modules, venv, dist, build
+- File limit controls to prevent overloading
+- Multi-language extension mapping: .py, .java, .js, .jsx, .ts, .tsx
+
+
+B. Model Module (slm_docgen/app/model.py)
+------------------------------------------
+Purpose: Load fine-tuned model and generate documentation
+
+Model Loading Strategy:
+1. Primary: Unsloth (optimized, faster inference)
+2. Fallback: Transformers + PEFT (standard approach)
+
+System Prompts by Language:
+- Python: "Generate accurate, well-structured documentation following Google-style. Include summary, parameter types, and return descriptions."
+- Java: "Generate Javadoc-style documentation with @param, @return, and @throws tags."
+- JavaScript: "Generate JSDoc-style documentation with @param types and @returns tags."
+
+Inference Configuration:
+- Max sequence length: 2048 tokens
+- 4-bit quantization enabled by default
+- Temperature: Not explicitly set (model default)
+- Caching: Global singleton pattern for model/tokenizer
+
+
+C. Injector Module (slm_docgen/app/injector.py)
+------------------------------------------------
+Purpose: Insert generated docstrings back into source files
+
+Safety Mechanisms:
+- Bottom-up processing: Sorts units by line number in reverse to preserve line positions
+- Automatic backups: Creates .bak files before modification
+- Indentation preservation: Detects and maintains original code formatting
+- Docstring replacement: Handles both insertion and replacement cases
+
+Language-Specific Formatting:
+- Python: Triple-quoted strings with proper indentation
+- Java: /** ... */ Javadoc blocks
+- JavaScript: /** ... */ JSDoc blocks
+
+
+D. Assembler Module (slm_docgen/app/assembler.py)
+--------------------------------------------------
+Purpose: Generate comprehensive README.md files
+
+README Sections:
+1. Project title with language badges
+2. LLM-generated overview paragraph
+3. Installation instructions (auto-detected from requirements.txt, package.json)
+4. Dependencies listing
+5. Project structure tree
+6. API reference with collapsible code examples
+7. Usage examples
+
+Language Badges:
+- Python: ![Python Badge]
+- Java: ![Java Badge]
+- JavaScript: ![JavaScript Badge]
+
+
+E. FastAPI Server (slm_docgen/app/main.py)
+-------------------------------------------
+Purpose: REST API for integration with editors and CI/CD
+
+Endpoints:
+- POST /generate-doc: Generate docstring for single code snippet
+- POST /generate-file: Process entire file
+- POST /generate-project: Process entire project (zip upload)
+- GET /health: Health check
+
+Configuration (Environment Variables):
+- ADAPTER_DIR: Path to LoRA adapters (default: ./slm_docgen_final/slm_docgen_adapters)
+- LOAD_IN_4BIT: Enable 4-bit quantization (default: true)
+- MAX_FILES: Maximum files per project (default: 50)
+- MAX_ZIP_MB: Maximum upload size (default: 50)
+
+CORS: Enabled for VS Code extension integration
+
+
+F. CLI Tool (slm_docgen/cli.py)
+--------------------------------
+Purpose: Command-line interface for batch processing
+
+Usage Examples:
+# Document entire project
+python cli.py document ./my_project
+
+# Document single file
+python cli.py document ./my_project/utils.py
+
+# Dry run (preview changes)
+python cli.py document ./my_project --dry-run
+
+# Custom output location
+python cli.py document ./my_project --output ./DOCS.md
+
+# Verbose logging
+python cli.py document ./my_project --verbose
+
+
+3. DATASET CONSTRUCTION
+========================
+
+3.1 Data Sources (from slm_dataset_pipeline.ipynb)
+---------------------------------------------------
+
+Tier 1 Datasets (Fully Loaded):
+- code2doc: High-quality code-documentation pairs
+- CodeXGLUE: Microsoft's code understanding benchmark
+- self-oss-instruct: Self-generated instruction dataset
+
+Tier 2 Datasets (Streamed & Filtered):
+- CodeSearchNet: GitHub code with natural language descriptions
+- docstring_corpus: Python docstring dataset
+
+
+3.2 Dataset Statistics
+-----------------------
+- Total Training Samples: 85,098
+- Validation Samples: 4,478
+- Train/Val Split: ~95% / 5%
+
+
+3.3 Processing Pipeline
+------------------------
+1. Loading: Download from HuggingFace Hub
+2. Filtering: Remove low-quality, short, or malformed examples
+3. Deduplication: Hash-based deduplication using SHA-256
+4. Balancing: Equal representation across Python, Java, JavaScript
+5. Formatting: Convert to Qwen2.5 chat template format
+
+
+3.4 Chat Template Format
+-------------------------
+<|im_start|>system
+You are a Python documentation assistant. [...]<|im_end|>
+<|im_start|>user
+Generate documentation for this code:
+[CODE SNIPPET]<|im_end|>
+<|im_start|>assistant
+[GENERATED DOCSTRING]<|im_end|>
+
+
+3.5 Quality Metrics
+--------------------
+- ROUGE score filtering: Minimum threshold for reference quality
+- Length constraints: Min/max token limits
+- Syntax validation: Parse code to ensure validity
+
+
+4. MODEL FINE-TUNING
+=====================
+
+4.1 Base Model
+--------------
+- Name: Qwen2.5-Coder-1.5B-Instruct
+- Parameters: 1.5 billion
+- Architecture: Qwen2 decoder-only transformer
+- Specialization: Pre-trained on code datasets
+- Instruction-tuned: Already follows chat templates
+
+
+4.2 Fine-Tuning Method: QLoRA
+------------------------------
+QLoRA = Quantized Low-Rank Adaptation
+
+Advantages:
+- Memory Efficient: 4-bit quantization reduces VRAM usage by ~4x
+- Parameter Efficient: Only train ~0.5% of model parameters
+- Quality: Minimal degradation compared to full fine-tuning
+- Deployment: Can run on consumer GPUs (16GB VRAM)
+
+
+4.3 LoRA Configuration (from adapter_config.json)
+--------------------------------------------------
+{
+  "base_model": "unsloth/qwen2.5-coder-1.5b-instruct-bnb-4bit",
+  "peft_type": "LORA",
+  "task_type": "CAUSAL_LM",
+  "r": 16,                    // LoRA rank (matrix dimension)
+  "lora_alpha": 32,           // Scaling factor
+  "lora_dropout": 0.0,        // No dropout for inference
+  "target_modules": [
+    "q_proj",                 // Query projection
+    "k_proj",                 // Key projection
+    "v_proj",                 // Value projection
+    "o_proj",                 // Output projection
+    "gate_proj",              // Gate projection (MLP)
+    "up_proj",                // Up projection (MLP)
+    "down_proj"               // Down projection (MLP)
+  ],
+  "bias": "none",
+  "use_dora": false,
+  "use_rslora": false
+}
+
+Explanation:
+- r=16: Low-rank matrices of dimension 16 (trade-off between efficiency and expressiveness)
+- alpha=32: 2x scaling amplifies LoRA contribution
+- Target Modules: All attention and MLP projections for maximum adaptation
+
+
+4.4 Training Configuration (from training_config.json)
+-------------------------------------------------------
+{
+  "model_id": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
+  "max_seq_length": 2048,
+  "num_epochs": 1,
+  "learning_rate": 0.0002,          // 2e-4 (standard for LoRA)
+  "batch_size": 16,
+  "train_samples": 85098,
+  "val_samples": 4478,
+  "final_train_loss": 0.510566,
+  "trained_at": "2026-04-04T17:37:28"
+}
+
+
+4.5 Hardware & Runtime (from finetune-upgrade.ipynb)
+-----------------------------------------------------
+- GPU: NVIDIA T4 (16GB VRAM)
+- Platform: Kaggle / Google Colab
+- Training Time: 9-11 GPU hours
+- Framework: Unsloth + TRL (Transformer Reinforcement Learning)
+- Optimizer: AdamW (implicit from SFTTrainer)
+
+
+4.6 Training Process
+--------------------
+1. Install Unsloth and dependencies
+2. Load base model in 4-bit with Unsloth
+3. Attach LoRA adapters to target modules
+4. Load chat-formatted dataset
+5. Configure SFTTrainer with loss masking (train on responses only)
+6. Train for 1 epoch with gradient accumulation
+7. Save LoRA adapters (only trainable parameters)
+8. Run inference test on validation samples
+
+
+4.7 Output Artifacts
+--------------------
+- adapter_config.json: LoRA configuration
+- adapter_model.safetensors: Trained adapter weights (~64MB)
+- tokenizer_config.json: Tokenizer settings
+- tokenizer.json: Vocabulary
+- chat_template.jinja: Qwen2.5 chat format template
+- training_config.json: Hyperparameters and training metadata
+
+
+5. EVALUATION METRICS (from slm_evaluation.ipynb)
+==================================================
+
+5.1 Automatic Metrics
+---------------------
+
+A. BLEU-4
+---------
+- Purpose: Surface-level n-gram overlap
+- Range: 0-100 (higher is better)
+- Measures: Precision of 1-4 grams against reference
+- Limitation: Doesn't capture semantic equivalence
+
+B. ROUGE-L
+----------
+- Purpose: Recall-oriented longest common subsequence
+- Range: 0-1 (higher is better)
+- Measures: How much of reference is covered
+- Strength: Better for longer text like docstrings
+
+C. BERTScore
+------------
+- Purpose: Semantic similarity using contextual embeddings
+- Range: 0-1 (higher is better)
+- Measures: Token-level similarity via BERT
+- Strength: Captures paraphrasing and semantic equivalence
+
+
+5.2 Custom Metrics
+------------------
+
+D. Parameter Coverage
+---------------------
+- Definition: Percentage of function parameters mentioned in generated docstring
+- Calculation: (mentioned_params / total_params) * 100
+- Purpose: Ensure completeness of documentation
+
+E. Style Accuracy
+-----------------
+- Definition: Whether generated docstring matches expected style
+- Styles: Google (Python), Javadoc (Java), JSDoc (JavaScript)
+- Validation: Regex patterns for style markers (@param, Args:, etc.)
+
+F. Hallucination Rate
+---------------------
+- Definition: Percentage of generated docstrings referencing non-existent identifiers
+- Detection: Extract mentioned parameters/variables and check against source code AST
+- Critical: Low hallucination = high trustworthiness
+
+G. Latency
+----------
+- Metrics: p50 (median), p95 (95th percentile)
+- Measurement: Time from code input to docstring output
+- Target: < 1 second for typical functions on T4 GPU
+
+
+5.3 Comparison Groups
+---------------------
+1. Fine-tuned model (your model with LoRA)
+2. Base model (Qwen2.5-Coder without fine-tuning)
+3. Per-language breakdown (Python vs Java vs JavaScript)
+4. Per-style breakdown (Google vs Javadoc vs JSDoc)
+
+
+5.4 Evaluation Workflow
+------------------------
+1. Load validation dataset (4,478 samples)
+2. Generate docstrings with fine-tuned model
+3. Generate docstrings with base model (for comparison)
+4. Compute metrics for each sample
+5. Aggregate by language and style
+6. Statistical significance testing (t-test or Wilcoxon)
+
+
+6. IMPLEMENTATION DETAILS
+==========================
+
+6.1 Dependencies (from requirements.txt)
+----------------------------------------
+# Web Framework
+fastapi>=0.110.0
+uvicorn>=0.27.0
+python-multipart>=0.0.9
+pydantic>=2.0.0
+
+# ML/AI
+transformers>=4.40.0    # HuggingFace transformers
+peft>=0.10.0            # Parameter-Efficient Fine-Tuning
+torch>=2.0.0            # PyTorch
+accelerate>=0.27.0      # Distributed training
+
+# Utilities
+tqdm>=4.66.0            # Progress bars
+
+# Optional (for speed)
+# unsloth (from GitHub)
+# bitsandbytes (for 4-bit quantization)
+
+
+6.2 Project Structure
+---------------------
+SLM Project/Trial project/
+├── finetune-upgrade.ipynb           # Training notebook
+├── slm_dataset_pipeline.ipynb       # Dataset creation
+├── slm_evaluation.ipynb             # Evaluation metrics
+│
+├── slm_docgen/                      # Main application
+│   ├── cli.py                       # Command-line interface
+│   ├── requirements.txt
+│   ├── README.md
+│   └── app/
+│       ├── __init__.py
+│       ├── main.py                  # FastAPI server
+│       ├── model.py                 # Model loading & inference
+│       ├── parser.py                # Code parsing
+│       ├── injector.py              # Docstring injection
+│       └── assembler.py             # README generation
+│
+├── slm_docgen_final/
+│   ├── README.txt
+│   └── slm_docgen_adapters/         # Fine-tuned model
+│       ├── adapter_config.json
+│       ├── adapter_model.safetensors
+│       ├── chat_template.jinja
+│       ├── tokenizer_config.json
+│       ├── tokenizer.json
+│       └── training_config.json
+│
+└── test_project/                    # Test cases
+    ├── app.js                       # JavaScript examples
+    ├── Calculator.java              # Java examples
+    ├── math_utils.py                # Python examples
+    ├── user_service.py              # Python class examples
+    ├── utils.py
+    ├── requirements.txt
+    ├── package.json
+    ├── README.md
+    └── README_generated.md          # Generated documentation
+
+
+6.3 Supported Languages & Styles
+---------------------------------
+Language   | File Extensions         | Doc Style     | Markers
+-----------|------------------------|---------------|----------------------------------
+Python     | .py                    | Google-style  | """Triple quotes""", Args:, Returns:
+Java       | .java                  | Javadoc       | /** ... */, @param, @return, @throws
+JavaScript | .js, .jsx, .ts, .tsx   | JSDoc         | /** ... */, @param, @returns
+
+
+7. PRACTICAL EXAMPLES
+======================
+
+7.1 Example 1: JavaScript Function
+-----------------------------------
+
+Input Code (from test_project/app.js):
+function fetchUserData(userId) {
+    return fetch(`/api/users/${userId}`)
+        .then(response => response.json())
+        .catch(error => {
+            console.error('Error fetching user:', error);
+            return null;
+        });
+}
+
+Generated Documentation:
+/**
+ * Fetches user data from the API.
+ * @param {string} userId - The ID of the user to fetch.
+ * @returns {Promise<Object|null>} A promise that resolves to the 
+ *          fetched user data or null if an error occurs.
+ */
+function fetchUserData(userId) { ... }
+
+Analysis:
+✓ Correct JSDoc format
+✓ Parameter type inferred (string)
+✓ Return type specified (Promise<Object|null>)
+✓ Error handling documented
+
+
+7.2 Example 2: Python Class
+----------------------------
+
+Input Code (from test_project/user_service.py):
+class UserManager:
+    def __init__(self, database_path):
+        self.database_path = database_path
+        self.users = []
+    
+    def add_user(self, username, email, age):
+        user = {
+            'username': username,
+            'email': email,
+            'age': age,
+            'created_at': datetime.now().isoformat()
+        }
+        self.users.append(user)
+        return user
+
+Generated Documentation:
+class UserManager:
+    """UserManager class to manage users in a database.
+    
+    Attributes:
+        database_path (str): Path to the database file.
+        users (list): List of users stored in the database.
+    
+    Methods:
+        __init__(self, database_path): Initialize with database path.
+        add_user(self, username, email, age): Add new user.
+        find_user(self, username): Find user by username.
+    """
+    
+    def add_user(self, username, email, age):
+        """Add a new user to the database.
+        
+        Args:
+            username (str): The username of the user.
+            email (str): The email address of the user.
+            age (int): The age of the user.
+        
+        Returns:
+            dict: The newly created user.
+        """
+
+Analysis:
+✓ Google-style docstring format
+✓ Class-level and method-level documentation
+✓ Type hints included
+✓ Complete parameter coverage
+
+
+7.3 Example 3: Java Method
+---------------------------
+
+Input Code (from test_project/Calculator.java):
+public class Calculator {
+    public double divide(double a, double b) throws ArithmeticException {
+        if (b == 0) {
+            throw new ArithmeticException("Division by zero");
+        }
+        return a / b;
+    }
+}
+
+Generated Documentation:
+/**
+ * Divides two numbers.
+ * 
+ * @param a The first number.
+ * @param b The second number.
+ * @return The result of dividing a by b.
+ * @throws ArithmeticException If b is zero.
+ */
+public double divide(double a, double b) throws ArithmeticException { ... }
+
+Analysis:
+✓ Javadoc format
+✓ @param tags for all parameters
+✓ @return tag with description
+✓ @throws tag documenting exception
+
+
+8. PERFORMANCE CHARACTERISTICS
+===============================
+
+8.1 Model Size
+--------------
+- Base Model (4-bit): ~800MB
+- LoRA Adapters: ~64MB
+- Total Memory: ~4-6GB VRAM during inference
+
+
+8.2 Inference Speed (Estimated)
+--------------------------------
+- Short function (<10 LOC): 200-500ms
+- Medium function (10-50 LOC): 500-1000ms
+- Large class (>50 LOC): 1-3 seconds
+- Hardware: NVIDIA T4 GPU (16GB)
+
+
+8.3 Training Efficiency
+-----------------------
+- Total Training Time: 9-11 GPU hours
+- Cost (Kaggle/Colab): Free tier (T4)
+- Dataset Processing: ~75 minutes
+- Adapter Size: 0.5% of full model parameters
+
+
+9. KEY RESEARCH QUESTIONS FOR IEEE PAPER
+=========================================
+
+1. How does fine-tuning a small model (1.5B) compare to using large general-purpose models (70B+) for code documentation?
+   - Metrics: BLEU, ROUGE, BERTScore, latency, resource usage
+
+2. Can a single model effectively handle multiple programming languages and documentation styles?
+   - Per-language accuracy analysis
+   - Style adherence rates
+
+3. What is the trade-off between model size and documentation quality?
+   - Quality degradation from quantization
+   - Efficiency gains
+
+4. How does parameter-efficient fine-tuning (LoRA) compare to full fine-tuning?
+   - Training time comparison
+   - Final performance comparison
+
+5. What is the practical deployment feasibility for local, privacy-preserving use?
+   - Hardware requirements
+   - Integration patterns (CLI, API, IDE plugins)
+
+
+10. CONTRIBUTIONS & NOVELTY
+============================
+
+10.1 Technical Contributions
+-----------------------------
+1. Multi-language specialization: Single model for 3 languages with style adaptation
+2. Production-ready pipeline: End-to-end system from parsing to injection
+3. Safety mechanisms: Backup creation, indentation preservation, validation
+4. Efficient deployment: 4-bit quantization + LoRA for consumer hardware
+
+
+10.2 Practical Contributions
+-----------------------------
+1. Local deployment: No cloud dependencies, privacy-preserving
+2. Open-source: Complete codebase and training notebooks
+3. Integration: REST API + CLI + potential IDE extensions
+4. Comprehensive evaluation: Multi-metric analysis beyond BLEU
+
+
+10.3 Research Contributions
+----------------------------
+1. Dataset pipeline: Reproducible data construction from public sources
+2. Comparative analysis: Fine-tuned vs base model
+3. Hallucination detection: Custom metric for code documentation
+4. Style accuracy: Automated validation of documentation conventions
+
+
+11. FUTURE WORK & LIMITATIONS
+==============================
+
+11.1 Current Limitations
+------------------------
+- Context window: 2048 tokens limits very large classes
+- Style mixing: Occasional format inconsistencies
+- Edge cases: Complex generic types, decorators, annotations
+- Performance: CPU inference is slow (15-30 seconds per function)
+
+
+11.2 Potential Improvements
+----------------------------
+1. Longer context: Upgrade to 8K/16K token models
+2. More languages: C++, C#, Go, Rust, TypeScript
+3. Active learning: User feedback loop for continuous improvement
+4. IDE integration: VS Code extension, IntelliJ plugin
+5. Incremental updates: Re-document only changed functions
+6. Custom styles: User-defined documentation templates
+
+
+12. RELATED WORK TO CITE
+=========================
+
+1. Qwen2 Paper: Base model architecture and pre-training
+2. LoRA Paper (Hu et al., 2021): Low-Rank Adaptation method
+3. QLoRA Paper (Dettmers et al., 2023): 4-bit quantization + LoRA
+4. CodeSearchNet (Husain et al., 2019): Code search dataset
+5. CodeXGLUE (Lu et al., 2021): Code understanding benchmark
+6. Transformers Library: HuggingFace implementation
+7. Unsloth: Optimized fine-tuning framework
+8. BLEU/ROUGE: Evaluation metrics for text generation
+9. BERTScore (Zhang et al., 2020): Semantic similarity metric
+10. Similar work: GitHub Copilot, Tabnine, CodeBERT, CodeT5, CodeGen
+
+
+13. SUGGESTED IEEE PAPER OUTLINE
+=================================
+
+Abstract 
+------------------------
+- Problem statement
+- Proposed solution (fine-tuned SLM with LoRA)
+- Key results (BLEU/ROUGE/BERTScore improvements)
+- Practical impact (local deployment, privacy)
+
+
+I. Introduction 
+----------------------------
+- Importance of code documentation
+- Challenges with manual documentation
+- Rise of AI-powered tools
+- Research questions and contributions
+
+
+II. Related Work 
+--------------------------
+- Traditional documentation tools
+- LLM-based code generation
+- Code summarization research
+- Parameter-efficient fine-tuning
+
+
+III. Methodology 
+-----------------------------
+A. Dataset Construction: Sources, processing, statistics
+B. Model Architecture: Qwen2.5-Coder + LoRA configuration
+C. Fine-tuning Process: QLoRA, hyperparameters, training
+D. Inference Pipeline: Parsing, generation, injection
+
+
+IV. Implementation 
+-------------------------------
+- System architecture diagram
+- API design
+- Safety mechanisms
+- Deployment options
+
+
+V. Evaluation 
+--------------------------
+A. Metrics: BLEU, ROUGE, BERTScore, custom metrics
+B. Experimental Setup: Datasets, baselines, hardware
+C. Results: Tables and charts with statistical analysis
+D. Ablation Studies: LoRA vs full, 4-bit vs full precision
+
+
+VI. Case Studies 
+--------------------------
+- Real examples with before/after code
+- Analysis of generated documentation quality
+
+
+VII. Discussion 
+-------------------------
+- Strengths and limitations
+- Comparison with cloud-based tools
+- Trade-offs (efficiency vs quality)
+
+
+VIII. Conclusion 
+-----------------------------
+- Summary of contributions
+- Key findings
+- Future directions
+
+
+References
+----------
+- Minimum 10 citations
+
+
+14. SPECIFIC NUMBERS TO INCLUDE IN PAPER
+=========================================
+
+- Dataset Size: 85,098 training + 4,478 validation samples
+- Model Parameters: 1.5 billion (base), ~7.5 million trainable (LoRA)
+- Training Time: 9-11 GPU hours on NVIDIA T4
+- Final Training Loss: 0.511
+- LoRA Rank: 16
+- LoRA Alpha: 32
+- Learning Rate: 2e-4
+- Batch Size: 16
+- Max Sequence Length: 2048 tokens
+- Quantization: 4-bit (bitsandbytes)
+- Languages Supported: multiple (Python, Java, JavaScript)
+- Adapter Size: 64MB
+- Memory Footprint: 4-6GB VRAM
+- Inference Time: [TO BE MEASURED FROM EVALUATION]
+- BLEU-4 Score: [TO BE MEASURED FROM EVALUATION]
+- ROUGE-L Score: [TO BE MEASURED FROM EVALUATION]
+- BERTScore: [TO BE MEASURED FROM EVALUATION]
+
+
+15. HOW TO USE THIS CONTEXT WITH GPT/GEMINI
+============================================
+
+Copy this entire file and provide it to GPT-4 or Gemini with this prompt:
+
+"Using the detailed project context above, generate a complete IEEE conference paper (6-8 pages) on this automated code documentation system. Include:
+- Abstract (150-250 words)
+- Introduction with research questions
+- Related Work section with comparisons
+- Methodology section with dataset construction, model architecture, training process, and inference pipeline
+- Implementation section with system architecture
+- Evaluation section with placeholder tables for metrics (BLEU, ROUGE, BERTScore, Parameter Coverage, Style Accuracy, Hallucination Rate, Latency)
+- Case Studies with before/after code examples
+- Discussion of strengths and limitations
+- Conclusion with future work
+- Follow IEEE conference paper formatting guidelines (two-column, Times New Roman 10pt)
+- Use appropriate academic language and citation placeholders [1], [2], etc."
+
+
+END OF CONTEXT DOCUMENT
+========================

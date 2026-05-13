@@ -1,0 +1,22 @@
+# Core dependencies
+fastapi>=0.110.0
+uvicorn>=0.27.0
+python-multipart>=0.0.9
+pydantic>=2.0.0
+
+# ML/AI dependencies
+transformers>=4.40.0
+peft>=0.10.0
+torch>=2.0.0
+accelerate>=0.27.0
+
+# Optional: Unsloth for optimized inference (may not be available on all platforms)
+# unsloth @ git+https://github.com/unslothai/unsloth.git
+
+# Utilities
+tqdm>=4.66.0
+
+# Development dependencies (optional)
+# pytest>=8.0.0
+# black>=24.0.0
+# flake8>=7.0.0
