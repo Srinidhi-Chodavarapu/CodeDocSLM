@@ -376,4 +376,3 @@ For issues, feature requests, or questions:
 
 ---
 
-**Built with ❤️ using AI to make documentation effortless**
